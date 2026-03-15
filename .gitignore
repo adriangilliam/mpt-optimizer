@@ -1,0 +1,10 @@
+# R
+.Rhistory
+.RData
+.Rproj.user/
+
+# Rcpp build artifacts
+*.o
+*.so
+*.dll
+src/
