@@ -113,6 +113,7 @@ all β coefficients (differences are floating-point rounding, not algorithmic).
 
 ## See also
 
+- [EQUIVALENCE.md](docs/EQUIVALENCE.md) — proof that no methodology was changed (proposal distributions, acceptance criteria, priors, RNG consumption all identical)
 - [DERIVATION.md](docs/DERIVATION.md) — algebra showing optimised ≡ original
 - [BUGS.md](docs/BUGS.md) — three pre-existing bugs fixed
 - [VERIFICATION.md](docs/VERIFICATION.md) — full reproduction guide with expected output ranges
