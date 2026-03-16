@@ -1,6 +1,6 @@
 # Market Probability Tracker — MCMC Optimisation
 
-This repository documents a **5–6× speedup** in the MCMC sampler of the Federal Reserve Bank of Atlanta's [Market Probability Tracker](https://www.atlantafed.org/research-and-data/data/market-probability-tracker) (MPT), with full verification that the statistical output is unchanged.
+This repository documents a **~2.3× end-to-end speedup** in the Federal Reserve Bank of Atlanta's [Market Probability Tracker](https://www.atlantafed.org/research-and-data/data/market-probability-tracker) (MPT), driven by a **5–6× speedup in the MCMC sampler** alone, with full verification that the statistical output is unchanged.
 
 ## Contents
 
@@ -108,6 +108,10 @@ call by precomputing `XtX = X'X` and maintaining `Xb = X·β` and `XtXb = X'X·�
 incrementally (O(n) and O(k) updates per accepted MCMC move, vs full recomputes).
 The statistical output is bit-for-bit identical for α, and agrees to < 1e-7 for
 all β coefficients (differences are floating-point rounding, not algorithmic).
+
+The end-to-end speedup (~2.3×) is more modest than the MCMC-only speedup (5–6×)
+because the X matrix build — an O(n·k) numerical integration step that is
+unchanged — accounts for roughly half the total runtime.
 
 ---
 
