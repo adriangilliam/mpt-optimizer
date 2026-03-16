@@ -15,10 +15,13 @@ The remote GitHub repo is at `https://github.com/adriangilliam/mpt-optimizer`. T
 Rscript benchmark_v2.R 2>/dev/null
 
 # Single-contract MCMC-only head-to-head (~30s)
-Rscript benchmark_compare.R 2>/dev/null
+Rscript benchmarks/benchmark_compare.R 2>/dev/null
 
 # 6-contract production-scale simulation (~5 min)
-Rscript benchmark_multi_contract.R 2>/dev/null
+Rscript benchmarks/benchmark_multi_contract.R 2>/dev/null
+
+# Stress-test: n × draws scaling grid (σ=1–7%, draws=250k–1M)
+Rscript benchmarks/benchmark_stress.R 2>/dev/null
 ```
 
 Suppress the `For infinite domains Gauss integration is applied!` noise with `2>/dev/null`.
@@ -95,4 +98,4 @@ Use `set.seed(100)` immediately before each `get_bvec_cpp` / `get_bvec_cpp_opt` 
 
 ## Bugs fixed in original
 
-Three bugs in the Atlanta Fed's `simplexregression.cpp` are fixed in `optimized/simplexregression.cpp`. See `docs/BUGS.md` in the GitHub repo for details. The most impactful: `beta_prior()` assigned to undeclared `like` instead of `prior`, making the log-posterior diagnostic column meaningless (sampling itself was unaffected).
+Four bugs are documented in `docs/BUGS.md`. Three are in the Atlanta Fed's original `simplexregression.cpp` (fixed in `optimized/simplexregression.cpp`); one is a floating-point drift issue in the optimised sampler (fixed by periodic recomputation every 10,000 iterations). The most impactful original bug: `beta_prior()` assigned to undeclared `like` instead of `prior`, making the log-posterior diagnostic column meaningless (sampling itself was unaffected).

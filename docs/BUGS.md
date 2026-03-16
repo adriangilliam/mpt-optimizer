@@ -1,8 +1,9 @@
 # Bugs Fixed in the Original Source
 
-The original `simplexregression.cpp` downloaded from the Atlanta Fed website
-(last updated 2024-04-30) contains two bugs that prevent compilation and
-produce incorrect output.  Both are fixed in `optimized/simplexregression.cpp`.
+Four bugs are documented here: three in the Atlanta Fed's original
+`simplexregression.cpp` (fixed in `optimized/simplexregression.cpp`), and one
+floating-point drift issue in the optimised sampler (fixed in
+`optimized/simplexregression_opt.cpp`).
 
 ---
 
@@ -68,7 +69,7 @@ diagnostic column meaningless (undefined behaviour).  The *sampling* steps
 
 ---
 
-## Bug 4 — Floating-point drift in incremental `XtXb` / `Xb` updates (optimised sampler)
+## Bug 3 — Floating-point drift in incremental `XtXb` / `Xb` updates (optimised sampler)
 
 ### Symptom
 With draws ≥ 1 000 000 and n ≥ ~50 options, `get_bvec_cpp_opt` produces posterior
@@ -114,7 +115,7 @@ Applied in `get_bvec_cpp_opt` at the top of the MCMC loop.
 
 ---
 
-## Bug 3 (minor, pre-existing) — `// [[Rcpp::export]]` followed by comments
+## Bug 4 (minor, pre-existing) — `// [[Rcpp::export]]` followed by comments
 
 The original file places `//` comment lines between the `// [[Rcpp::export]]`
 attribute and the function declaration.  Rcpp's attribute parser tries to

@@ -27,12 +27,13 @@ benchmarks/
   benchmark_optimized.R             # Same data + parallel X matrix + optimised sampler
   benchmark_compare.R               # Head-to-head: identical inputs, swap only the sampler
   benchmark_multi_contract.R        # 6-contract production-scale simulation (Jun 2026–Sep 2027)
+  benchmark_stress.R                # Stress-test: n × draws scaling grid (σ=1–7%, draws=250k–1M)
 
 benchmark_v2.R                      # Full v2 benchmark: C++ X matrix + all MCMC versions
 
 docs/
   DERIVATION.md                     # Full algebraic derivation of the v1 MCMC optimisation
-  BUGS.md                           # Three bugs found and fixed in the original source
+  BUGS.md                           # Four bugs found and fixed
   VERIFICATION.md                   # Step-by-step reproduction guide with expected output
   EQUIVALENCE.md                    # Proof that no methodology was changed
 ```
@@ -167,5 +168,5 @@ This reduces 1.9M R-dispatched evaluations to 24k C-level `pnorm`/`dnorm` calls 
 
 - [EQUIVALENCE.md](docs/EQUIVALENCE.md) — proof that no methodology was changed
 - [DERIVATION.md](docs/DERIVATION.md) — algebra showing v1 optimised ≡ original
-- [BUGS.md](docs/BUGS.md) — three pre-existing bugs fixed
+- [BUGS.md](docs/BUGS.md) — four bugs found and fixed
 - [VERIFICATION.md](docs/VERIFICATION.md) — full reproduction guide with expected output
