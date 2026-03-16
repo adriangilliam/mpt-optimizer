@@ -4,21 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-An optimised re-implementation of the Federal Reserve Bank of Atlanta's [Market Probability Tracker](https://www.atlantafed.org/research-and-data/data/market-probability-tracker) MCMC sampler. The MCMC sampler itself runs 5–6× faster; end-to-end total runtime is ~2.3× faster (the X matrix build is unchanged and accounts for roughly half the total runtime). No change to statistical methodology.
+An optimised re-implementation of the Federal Reserve Bank of Atlanta's [Market Probability Tracker](https://www.atlantafed.org/research-and-data/data/market-probability-tracker) MCMC sampler and X matrix build. End-to-end runtime is ~7.7× faster (MCMC sampler 9.1×, X matrix 110×). No change to statistical methodology.
 
 The remote GitHub repo is at `https://github.com/adriangilliam/mpt-optimizer`. The local working directory is `~/Dev/fed`; the git-tracked copy synced to GitHub lives at `/tmp/mpt-optimizer`.
 
 ## Running benchmarks
 
 ```bash
-# Single-contract head-to-head (fastest, ~30s, validates correctness)
+# Full v2 benchmark: C++ X matrix + all MCMC versions (~30s, recommended)
+Rscript benchmark_v2.R 2>/dev/null
+
+# Single-contract MCMC-only head-to-head (~30s)
 Rscript benchmark_compare.R 2>/dev/null
 
 # 6-contract production-scale simulation (~5 min)
 Rscript benchmark_multi_contract.R 2>/dev/null
-
-# Baseline only (original sampler, ~25s)
-Rscript benchmark.R 2>/dev/null
 ```
 
 Suppress the `For infinite domains Gauss integration is applied!` noise with `2>/dev/null`.
@@ -29,19 +29,35 @@ Every benchmark follows the same four-phase sequence:
 
 1. **`update_data()`** → synthetic SOFR options data frame + futures + Treasury curve
 2. **`get_transformparms()`** → OLS-implied F, B, σ via put-call parity regression
-3. **`get_xmat()`** → n×80 matrix X of Beta-mixture basis integrals (slowest step, O(n·k) integrals)
-4. **`get_bvec_cpp` / `get_bvec_cpp_opt`** → MCMC posterior draws (250k draws, 100k burn, thin=150)
+3. **`get_xmat()` / `get_xmat_cpp()`** → n×80 matrix X of Beta-mixture basis integrals
+4. **`get_bvec_cpp` / `get_bvec_cpp_opt` / `get_bvec_cpp_opt2`** → MCMC posterior draws (250k draws, 100k burn, thin=150)
 
 ## C++ source files
 
 | File | Purpose |
 |---|---|
-| `mpt_source/simplexregression.cpp` | Bug-fixed original sampler; exports `get_bvec_cpp` |
-| `mpt_source/simplexregression_opt.cpp` | Optimised sampler; exports `get_bvec_cpp_opt` |
+| `optimized/simplexregression.cpp` | Bug-fixed original sampler; exports `get_bvec_cpp` |
+| `optimized/simplexregression_opt.cpp` | Opt v1: precomputed XtX/Xtp, incremental Xb/XtXb; exports `get_bvec_cpp_opt` |
+| `optimized/simplexregression_opt2.cpp` | Opt v2: + scalar RNG, uniform-ξ fast path; exports `get_bvec_cpp_opt2` |
+| `optimized/xmat_cpp.cpp` | C++ X matrix (tanh-sinh quadrature); exports `get_xmat_cpp` |
 
-Both are loaded via `sourceCpp(...)` at the top of each benchmark script. Paths are currently hardcoded to `~/Dev/fed/mpt_source/`. After recompilation, Rcpp caches the `.so` in `~/.cache/R/sourceCpp/`; clear it if you suspect a stale build.
+Also mirrored in `mpt_source/` for local development. The `optimized/` directory is the canonical location for the public repo.
 
-The optimised sampler reduces `beta_met` from O(n·k²) to O(k²+n·k) per iteration by precomputing `XtX=X'X` and `Xtp=X'·price`, then maintaining `Xb=X·β` and `XtXb=XtX·β` incrementally on each accepted MCMC move. No other part of the algorithm changes.
+All are loaded via `sourceCpp(...)` at the top of each benchmark script. After recompilation, Rcpp caches the `.so` in `~/.cache/R/sourceCpp/`; clear it if you suspect a stale build.
+
+### v1 MCMC optimisation
+
+Reduces `beta_met` from O(n·k²) to O(k²+n·k) per iteration by precomputing `XtX=X'X` and `Xtp=X'·price`, then maintaining `Xb=X·β` and `XtXb=XtX·β` incrementally on each accepted MCMC move.
+
+### v2 MCMC optimisation
+
+Replaces Rcpp sugar RNG calls (`runif(1)[0]`, `rlogis(1,...)[0]`, `rgamma(1,...)[0]`) with scalar C API calls (`R::runif`, `R::rlogis`, `R::rgamma`). Eliminates 40M vector allocations per contract. Same R RNG stream.
+
+Adds uniform-ξ fast path for Dirichlet log-pdf: `k * lgamma(α/k)` instead of `Σ lgamma(α·ξ_j)` when ξ is uniform (1.7× additional MCMC speedup).
+
+### C++ X matrix
+
+Same tanh-sinh quadrature as `pracma::quadinf` (same nodes, weights, variable transformation, 7-level Richardson extrapolation). Key difference: shares `pnorm`/`dnorm` across all k=80 basis functions at each quadrature node. Machine-epsilon accuracy (max error 2×10⁻¹⁶).
 
 ## Critical option convention
 
@@ -54,7 +70,9 @@ Put-call parity: `P_price − C_price = B·(F_rate − K_rate)`, so the OLS slop
 
 ## Units
 
-`get_transformparms` stores `F_ols` and `sigma_ols` in **percent** (e.g., 3.65, 1.00). All downstream helpers (`get_xmat`, `norm_solvenlm`, `b_gibbs`, etc.) divide by 100 to convert back to decimal. Strikes and prices are always in **decimal rate space**.
+`get_transformparms` stores `F_ols` and `sigma_ols` in **percent** (e.g., 3.65, 1.00). All downstream helpers (`get_xmat`, `get_xmat_cpp`, `norm_solvenlm`, `b_gibbs`, etc.) divide by 100 to convert back to decimal. Strikes and prices are always in **decimal rate space**.
+
+The C++ X matrix takes `m` and `sig` in decimal space (already converted): `m = F_ols/100`, `sig = 3 * sigma_ols/100`.
 
 ## MCMC hyperparameters (fixed across all benchmarks)
 
@@ -64,7 +82,7 @@ alpha=10; alpha_step=0.1; tau=1; zeta=1
 xi=rep(1/k, k); B_m=1; B_v=1e12; sigsq=1
 ```
 
-Use `set.seed(100)` immediately before each `get_bvec_cpp` / `get_bvec_cpp_opt` call to ensure reproducible, comparable draws.
+Use `set.seed(100)` immediately before each `get_bvec_cpp` / `get_bvec_cpp_opt` / `get_bvec_cpp_opt2` call to ensure reproducible, comparable draws.
 
 ## Synthetic data parameters
 
@@ -77,4 +95,4 @@ Use `set.seed(100)` immediately before each `get_bvec_cpp` / `get_bvec_cpp_opt` 
 
 ## Bugs fixed in original
 
-Three bugs in the Atlanta Fed's `simplexregression.cpp` are fixed in `mpt_source/simplexregression.cpp`. See `docs/BUGS.md` in the GitHub repo for details. The most impactful: `beta_prior()` assigned to undeclared `like` instead of `prior`, making the log-posterior diagnostic column meaningless (sampling itself was unaffected).
+Three bugs in the Atlanta Fed's `simplexregression.cpp` are fixed in `optimized/simplexregression.cpp`. See `docs/BUGS.md` in the GitHub repo for details. The most impactful: `beta_prior()` assigned to undeclared `like` instead of `prior`, making the log-posterior diagnostic column meaningless (sampling itself was unaffected).

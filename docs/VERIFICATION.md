@@ -258,9 +258,75 @@ expressions evaluate to the same scalar for a few (j, k_index) pairs.
 | File | Change | Reason |
 |---|---|---|
 | `optimized/simplexregression.cpp` | `#` → `//` comments; `like` → `prior` in `beta_prior`; moved comment before `[[Rcpp::export]]` | Bug fixes — original would not compile or had UB |
-| `optimized/simplexregression_opt.cpp` | New file | Optimised sampler; identical interface to `get_bvec_cpp` |
+| `optimized/simplexregression_opt.cpp` | New file | Opt v1: precomputed XtX/Xtp, incremental Xb/XtXb |
+| `optimized/simplexregression_opt2.cpp` | New file | Opt v2: scalar RNG + uniform-ξ fast path |
+| `optimized/xmat_cpp.cpp` | New file | C++ X matrix using tanh-sinh quadrature |
 | `benchmarks/benchmark_baseline.R` | New file | Generates synthetic data, runs original sampler |
 | `benchmarks/benchmark_optimized.R` | New file | Same data + parallel X matrix + optimised sampler |
 | `benchmarks/benchmark_compare.R` | New file | Strict head-to-head: shared inputs, both samplers, output diff |
 | `benchmarks/benchmark_multi_contract.R` | New file | 6-contract production-scale simulation (Jun 2026 – Sep 2027) |
+| `benchmark_v2.R` | New file | Full v2 benchmark: C++ X matrix + all MCMC versions |
 | `original/market_probability_tracker.R` | Unchanged from Atlanta Fed | Reference only |
+
+---
+
+## 9. Running the v2 benchmark
+
+```bash
+cd <repo_root>
+Rscript benchmark_v2.R 2>/dev/null
+```
+
+This benchmark compares all optimisation levels in a single run:
+
+1. **X matrix**: R `pracma::integral` (reltol=0) vs C++ tanh-sinh (all 7 levels)
+2. **MCMC**: original → opt v1 → opt v2, all on the same X matrix
+3. **Full pipeline**: opt v2 MCMC + C++ X matrix
+
+Expected output (Apple M-series):
+
+```
+================================================================
+RESULTS SUMMARY
+================================================================
+
+Step                          Time(s)  Speedup  vs Orig
+--------------------------------------------------------
+X matrix (R)                     5.81      —      —
+X matrix (C++)                 0.0530     110x      —
+solnp (shared)                   1.22      —      —
+MCMC original                   18.10      —     1.0x
+MCMC opt v1                      3.44     5.3x     5.3x
+MCMC opt v2                      1.98     1.7x     9.1x
+--------------------------------------------------------
+TOTAL original pipeline         25.14      —      —
+TOTAL opt v1                    10.47      —     2.4x
+TOTAL opt v2 (R X)               9.02      —     2.8x
+TOTAL opt v2 (C++ X)             3.26      —     7.7x
+```
+
+### What to verify
+
+**X matrix accuracy** (C++ vs R):
+
+| Metric | Expected |
+|---|---|
+| Max absolute error (all cells) | < 1e-14 |
+| Max relative error (cells > 1e-10) | < 1e-13 |
+
+**MCMC accuracy** (v1 vs v2, same X matrix):
+
+| Quantity | Expected max \|diff\| |
+|---|---|
+| α | 0.00e+00 (bit-for-bit) |
+| B | < 1e-10 |
+| σ² | < 1e-14 |
+| any β | < 1e-07 |
+
+**MCMC accuracy** (C++ X vs R X):
+
+| Quantity | Expected max \|diff\| |
+|---|---|
+| any β | < 1e-07 |
+
+Differences > 1e-07 in β indicate an algorithmic bug, not rounding.

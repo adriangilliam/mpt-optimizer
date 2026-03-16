@@ -1,10 +1,10 @@
 # Statistical Equivalence Proof
 
-This document proves that `get_bvec_cpp_opt` produces draws from the same
-posterior distribution as `get_bvec_cpp`, and that with the same random seed
-the draws agree to floating-point precision.
+This document proves that `get_bvec_cpp_opt` (v1) and `get_bvec_cpp_opt2` (v2)
+produce draws from the same posterior distribution as `get_bvec_cpp`, and that
+with the same random seed the draws agree to floating-point precision.
 
-The optimisation changes **only how arithmetic is sequenced**, not what
+The optimisations change **only how arithmetic is sequenced**, not what
 is computed.  Every proposal distribution, acceptance criterion, prior,
 hyperparameter, and output format is preserved exactly.
 
@@ -241,3 +241,80 @@ production concern.
 | All hyperparameters (k=80, draws=250k, burn=100k, thin=150, α₀=10, …) | Unchanged |
 | Priors (Dirichlet for β, logistic for α, truncated-normal for B, inv-χ² for σ²) | Unchanged |
 | Output matrix format | Unchanged |
+
+---
+
+## 10. v2 additions: scalar RNG, uniform-ξ, C++ X matrix
+
+`get_bvec_cpp_opt2` carries forward all v1 changes and adds two further
+constant-factor optimisations, plus a C++ X matrix replacement.
+
+### 10a. Scalar RNG — same stream, no allocation
+
+v1 uses Rcpp sugar for random draws:
+```cpp
+double p  = runif(1)[0];       // allocates NumericVector, extracts element
+double z1 = rlogis(1, z0, s)[0];
+double g  = rgamma(1, a, b)[0];
+```
+
+v2 replaces these with direct C API calls:
+```cpp
+double p  = R::runif(0.0, 1.0);   // same R RNG state, no allocation
+double z1 = R::rlogis(z0, s);
+double g  = R::rgamma(a, b);
+```
+
+Both call the same underlying R RNG (`unif_rand()` → Mersenne Twister). The
+random stream is identical: `set.seed(100)` before v1 and v2 produces α
+posterior means that agree to `0.00e+00`.
+
+**Proof by benchmark**: `benchmark_v2.R` shows α diff = 0 between v1 and v2.
+
+### 10b. Uniform-ξ Dirichlet fast path
+
+The Dirichlet log-pdf contains:
+
+```
+Σ_j lgamma(α · ξ_j)
+```
+
+When ξ is uniform (ξ_j = 1/k for all j, the standard MPT configuration),
+this reduces to:
+
+```
+k · lgamma(α / k)
+```
+
+This is algebraically identical — one `lgamma` call instead of k.  The
+optimisation is detected at runtime (`xi_uniform` flag) and the general
+path is preserved for non-uniform ξ.
+
+### 10c. C++ X matrix — same quadrature algorithm
+
+The C++ X matrix (`get_xmat_cpp` in `xmat_cpp.cpp`) replaces the R-level
+`pracma::integral → quadinf` chain with an equivalent C++ implementation
+using the same tanh-sinh (double exponential) quadrature:
+
+| Component | R (`pracma::quadinf`) | C++ (`get_xmat_cpp`) |
+|---|---|---|
+| Variable transform for [K, ∞) | `x = K + (y+1)/(1-y)` | identical |
+| Variable transform for (-∞, K] | `x = K - (y+1)/(1-y)` | identical |
+| Quadrature nodes | tanh-sinh: `tanh(π/2 · sinh(t))` | identical (computed from same formula) |
+| Weights | `π/2 · cosh(t) / cosh²(π/2 · sinh(t))` | identical |
+| Number of levels | 7 (when reltol=0) | 7 (when tol=0, default) |
+| Richardson extrapolation | `Q_new = s·h + Q/2` | identical |
+| Convergence check | `\|Q_new - Q\| < tol` | identical |
+| Integrands | `f_p`, `f_c` (R callbacks) | same formulas, C-level `R::pnorm`/`R::dnorm`/`R::dbeta` |
+
+The C++ version adds one structural optimisation: at each quadrature node,
+`pnorm(x, m, σ)` and `dnorm(x, m, σ)` are computed once and shared across
+all k basis functions.  Only `dbeta(Φ(x), j+1, k-j)` varies with j.  This
+reduces pnorm/dnorm evaluations from 1.9M (R) to 24k (C++) without changing
+any computed value.
+
+**Accuracy**: max absolute error 2.08 × 10⁻¹⁶ (machine epsilon), max
+relative error 8.44 × 10⁻¹⁵ on cells with magnitude > 10⁻¹⁰.
+
+**Proof by benchmark**: `benchmark_v2.R` shows posterior means with C++ X
+match those with R X to < 2.4e-08 in any β coefficient.
