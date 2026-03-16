@@ -15,8 +15,8 @@ suppressPackageStartupMessages({
   library(Rcpp); library(RcppArmadillo); library(parallel)
 })
 
-sourceCpp('/Users/adriangilliam/Dev/fed/mpt_source/simplexregression.cpp')
-sourceCpp('/Users/adriangilliam/Dev/fed/mpt_source/simplexregression_opt.cpp')
+sourceCpp(file.path(dirname(sys.frame(1)$ofile), '..', 'optimized', 'simplexregression.cpp'))
+sourceCpp(file.path(dirname(sys.frame(1)$ofile), '..', 'optimized', 'simplexregression_opt.cpp'))
 
 n_cores = max(1L, detectCores() - 1L)
 

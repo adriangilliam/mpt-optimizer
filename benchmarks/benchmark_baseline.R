@@ -16,7 +16,7 @@ suppressPackageStartupMessages({
   library(RcppArmadillo)
 })
 
-sourceCpp('/Users/adriangilliam/Dev/fed/mpt_source/simplexregression.cpp')
+sourceCpp(file.path(dirname(sys.frame(1)$ofile), '..', 'optimized', 'simplexregression.cpp'))
 
 # ---------------------------------------------------------------------------
 # Helper: linearly interpolate yield from Treasury curve

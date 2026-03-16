@@ -7,4 +7,16 @@
 *.o
 *.so
 *.dll
-src/
+
+# Local dev files (canonical versions are in benchmarks/ and optimized/)
+mpt_source/
+benchmark.R
+benchmark_compare.R
+benchmark_multi_contract.R
+benchmark_opt.R
+
+# Data files
+mpt_histdata.xlsx
+
+# macOS
+.DS_Store
