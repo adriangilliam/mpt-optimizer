@@ -222,6 +222,18 @@ mat get_bvec_cpp_opt(int draws, int burn, int thin, int k, int out_length,
   mat output_mat(out_length, k + 4);
 
   for (int i = 0; i < draws; i++) {
+    // Periodic recomputation to prevent floating-point drift in the maintained
+    // quantities. Incremental updates (O(n) and O(k) each) accumulate rounding
+    // error over very long runs; refreshing every 10 000 iterations costs
+    // O(n*k + k^2) ≈ 0.01% of total work and keeps errors at machine epsilon.
+    if (i > 0 && i % 10000 == 0) {
+      Xb   = X   * beta_vec;
+      XtXb = XtX * beta_vec;
+      colvec lbv   = log(beta_vec);
+      xi_log_sum   = dot(xi, lbv);
+      log_beta_sum = sum(lbv);
+    }
+
     // Sample alpha via MH (O(k) for lgamma sums — unavoidable per iteration)
     alpha = z_met_opt(alpha, xi, xi_log_sum, log_beta_sum, zeta, tau, alpha_step);
     q     = alpha * xi - 1.0;

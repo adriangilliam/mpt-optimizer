@@ -68,6 +68,52 @@ diagnostic column meaningless (undefined behaviour).  The *sampling* steps
 
 ---
 
+## Bug 4 — Floating-point drift in incremental `XtXb` / `Xb` updates (optimised sampler)
+
+### Symptom
+With draws ≥ 1 000 000 and n ≥ ~50 options, `get_bvec_cpp_opt` produces posterior
+means that diverge from `get_bvec_cpp` by up to 0.14 in some β coefficients
+(expected < 1e-7).  At extreme sigma values the sampler also slows catastrophically
+(both samplers spend time in a bad region of the posterior).
+
+Discovered by the stress-test benchmark (`benchmarks/benchmark_stress.R`) at
+sigma=3%, n=68, draws=1 000 000.
+
+### Cause
+Each accepted β move updates the maintained quantities incrementally:
+
+```cpp
+XtXb += delta * (XtX.col(j) - XtX.col(k_index));   // O(k)
+Xb   += delta * (X.col(j)   - X.col(k_index));      // O(n)
+```
+
+Each operation introduces a rounding error of O(ε · ‖XtXb‖) where ε ≈ 2.2e-16.
+Over 1 000 000 iterations with a high acceptance rate, these errors accumulate
+and the maintained values drift away from `XtX * beta_vec` and `X * beta_vec`.
+The drift corrupts the proposal mean `m` in `beta_met_opt`, causing the optimised
+sampler to explore a different region of the posterior from the original.
+
+For production parameters (draws=250 000, sigma≈1–2%), drift is negligible
+(max |diff| < 1e-7).
+
+### Fix
+Refresh `Xb`, `XtXb`, `xi_log_sum`, and `log_beta_sum` from scratch every
+10 000 iterations.  This costs O(n·k + k²) ≈ 0.01% of total work per refresh:
+
+```cpp
+if (i > 0 && i % 10000 == 0) {
+  Xb   = X   * beta_vec;
+  XtXb = XtX * beta_vec;
+  colvec lbv   = log(beta_vec);
+  xi_log_sum   = dot(xi, lbv);
+  log_beta_sum = sum(lbv);
+}
+```
+
+Applied in `get_bvec_cpp_opt` at the top of the MCMC loop.
+
+---
+
 ## Bug 3 (minor, pre-existing) — `// [[Rcpp::export]]` followed by comments
 
 The original file places `//` comment lines between the `// [[Rcpp::export]]`
